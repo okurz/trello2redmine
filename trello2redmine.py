@@ -21,7 +21,8 @@ if len(sys.argv) > 3 or (len(sys.argv) == 2 and sys.argv[1] == '-h'):
 	sys.exit(0)
 
 # If a dry run, JSON is printed instead of submitted to Redmine.
-dry_run = len(sys.argv) < 2 or sys.argv[2] != '-c'
+#dry_run = len(sys.argv) < 2 or sys.argv[2] != '-c'
+dry_run = False
 if dry_run:
 	print('Making a dry run! Re-run with -c to commit the import into Redmine.')
 else:
@@ -39,8 +40,8 @@ if not url.netloc.endswith('trello.com'):
 print('Downloading board JSON from Trello...')
 sys.stdout.flush()
 
-#board = json.loads(open(sys.argv[1]).read())
-board = requests.get(cfg.trello_board_link + '.json').json()
+board = json.loads(open(sys.argv[1]).read())
+#board = requests.get(cfg.trello_board_link + '.json').json()
 
 print('Processing board JSON...')
 sys.stdout.flush()
@@ -96,7 +97,7 @@ for a in board["actions"]:
 print('Querying Redmine configuration...')
 sys.stdout.flush()
 
-redmine_projects = requests.get(cfg.redmine_root_url + '/projects.json', verify=cfg.redmine_verify_certificates, headers={'X-Redmine-API-Key': cfg.redmine_api_key}).json()
+redmine_projects = requests.get(cfg.redmine_root_url + '/projects.json?limit=200', verify=cfg.redmine_verify_certificates, headers={'X-Redmine-API-Key': cfg.redmine_api_key}).json()
 redmine_project_id = -1
 for rp in redmine_projects["projects"]:
 	if rp["identifier"] == cfg.redmine_project_identifier:
@@ -108,13 +109,14 @@ if redmine_project_id < 0:
 	sys.exit(1)
 #print('Redmine project ID: {0}'.format(redmine_project_id))
 
-redmine_users = requests.get(cfg.redmine_root_url + '/users.json', verify=cfg.redmine_verify_certificates, headers={'X-Redmine-API-Key': cfg.redmine_api_key}).json()
+# offset 2676 ensures 'Oliver Kurz' shows up
+redmine_users = requests.get(cfg.redmine_root_url + '/users.json?offset=2676', verify=cfg.redmine_verify_certificates, headers={'X-Redmine-API-Key': cfg.redmine_api_key}).json()
 redmine_users_dict = {}
 for ru in redmine_users["users"]:
 	fullname = u'{0} {1}'.format(ru["firstname"], ru["lastname"])
 	redmine_users_dict[fullname] = ru["id"]
 
-#print('Redmine users:\n' + str(redmine_users_dict))
+print('Redmine users:\n' + str(redmine_users_dict))
 
 if not cfg.redmine_default_user in redmine_users_dict:
 	print('Default user does not exist in Redmine!\n\n{0}'.format(str(redmine_users_dict)))
@@ -122,7 +124,7 @@ if not cfg.redmine_default_user in redmine_users_dict:
 
 redmine_priorities = requests.get(cfg.redmine_root_url + '/enumerations/issue_priorities.json', verify=cfg.redmine_verify_certificates, headers={'X-Redmine-API-Key': cfg.redmine_api_key}).json()
 redmine_priorities_dict = {}
-redmine_default_priority = "Normalny"
+redmine_default_priority = "Normal"
 for rp in redmine_priorities["issue_priorities"]:
 	redmine_priorities_dict[rp["name"]] = rp["id"]
 	if "is_default" in rp and rp["is_default"]:
@@ -132,7 +134,7 @@ for rp in redmine_priorities["issue_priorities"]:
 
 redmine_statuses = requests.get(cfg.redmine_root_url + '/issue_statuses.json', verify=cfg.redmine_verify_certificates, headers={'X-Redmine-API-Key': cfg.redmine_api_key}).json()
 redmine_statuses_dict = {}
-redmine_default_status = "Nowy"
+redmine_default_status = "New"
 for rs in redmine_statuses["issue_statuses"]:
 	redmine_statuses_dict[rs["name"]] = rs["id"]
 	if "is_default" in rs and rs["is_default"]:
@@ -154,9 +156,9 @@ for id, fullname in members_dict.iteritems():
 		fullname = cfg.redmine_default_user
 	redmine_id = redmine_users_dict[fullname]
 	user_map[id] = redmine_id
-	#print(u'Matched user {0}, Trello ID {1}, Redmine ID {2}'.format(fullname, id, redmine_id).encode('utf-8'))
+	print(u'Matched user {0}, Trello ID {1}, Redmine ID {2}'.format(fullname, id, redmine_id).encode('utf-8'))
 
-#print(u'User ID map:\n{0}\nDefault user ID: {1}'.format(str(user_map), redmine_users_dict[cfg.redmine_default_user]).encode('utf-8'))
+print(u'User ID map:\n{0}\nDefault user ID: {1}'.format(str(user_map), redmine_users_dict[cfg.redmine_default_user]).encode('utf-8'))
 
 priority_map = {}
 for id, name in labels_dict.iteritems():
@@ -215,7 +217,8 @@ for c in board["cards"]:
 	else:
 		result = requests.post(cfg.redmine_root_url + '/issues.json', data=json.dumps(card), verify=cfg.redmine_verify_certificates, headers={'X-Redmine-API-Key': cfg.redmine_api_key, "Content-Type": "application/json"})
 		if result.status_code >= 400:
-			print('Error {0}: Request headers:\n{1}\nResponse headers:\n{2}\nContent: {3}'.format(str(result), result.request.headers, result.headers, result.content))
+			print('Error on post {0}: Request headers:\n{1}\nResponse headers:\n{2}\nContent: {3}'.format(str(result), result.request.headers, result.headers, result.content))
+		        print(json.dumps(card, sort_keys=False, indent=4, separators=(',', ': ')))
 			sys.exit(1)
 		else:
 			print(str(result))
@@ -235,9 +238,11 @@ for c in board["cards"]:
 			else:
 				result = requests.put(cfg.redmine_root_url + '/issues/{0}.json'.format(issue_id), data=json.dumps(update), verify=cfg.redmine_verify_certificates, headers={'X-Redmine-API-Key': cfg.redmine_api_key, "Content-Type": "application/json"})
 				if result.status_code >= 400:
-					print('Error {0}: Request headers:\n{1}\nResponse headers:\n{2}\nContent: {3}'.format(str(result), result.request.headers, result.headers, result.content))
+					print('Error for comments {0}: Request headers:\n{1}\nResponse headers:\n{2}\nContent: {3}'.format(str(result), result.request.headers, result.headers, result.content))
 					sys.exit(1)
 				else:
 					print(str(result))
+        #print("Aborting after one for testing")
+        #sys.exit(0)
 
 print('Done!')
