@@ -6,7 +6,11 @@ import trello2redmine_config as cfg
 import sys
 import json
 import requests
-import urlparse
+try:
+    from urlparse import urlparse
+except ImportError:  # python 3
+    from urllib.parse import urlparse
+
 
 if len(sys.argv) > 3 or (len(sys.argv) == 2 and sys.argv[1] == '-h'):
 	print('Usage: {0} [<options>])'.format(sys.argv[0]))
@@ -23,7 +27,7 @@ if dry_run:
 else:
 	print('Making a commit!')
 
-url = urlparse.urlparse(cfg.trello_board_link)
+url = urlparse(cfg.trello_board_link)
 if not url.netloc.endswith('trello.com'):
 	print('URL does not seem to be a Trello board link. Are you sure this is correct?')
 	sys.exit(1)
